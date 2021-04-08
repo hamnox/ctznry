@@ -640,8 +640,10 @@ class CtznUser extends LitElement {
             user-id=${this.userId}
             .profile=${this.userProfile}
             @profile-updated=${this.onProfileUpdated}
-          ></app-edit-profile>
-        `
+            .members=${this.members}
+            .communityConfig=${this.communityConfig}
+            .roles=${this.roles}
+          ></app-edit-profile>`
       }
       return html`
         <div class="bg-white px-8 py-5 text-gray-600 sm:rounded mb-0.5">

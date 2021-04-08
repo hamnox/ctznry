@@ -21,7 +21,12 @@ export class EditProfile extends LitElement {
       values: {type: Object},
       customUIOverride: {type: Boolean},
       currentView: {type: String},
-      currentError: {type: String}
+      currentError: {type: String},
+
+      /// for communities
+      members: {type: Array},
+      communityConfig: {type: Object},
+      roles: {type: Array},
     }
   }
 
@@ -41,6 +46,15 @@ export class EditProfile extends LitElement {
     this.img = undefined
     this.uploadedAvatar = undefined
     this.uploadedBanner = undefined
+
+    // if community
+    this.joinModeSelected = undefined
+    this.members = undefined
+    this.communityConfig = undefined
+    this.roles = undefined
+    this.isEmpty = undefined
+    this.invitedUser = undefined
+
   }
 
   get isCitizen () {
@@ -58,10 +72,51 @@ export class EditProfile extends LitElement {
     return this.values?.sections?.length
   }
 
+  get amIAMember () {
+    return !!this.members?.find?.(m => m.value.user.userId === session.info?.userId)
+  }
+  get isMembershipClosed () {
+    return this.communityConfig?.joinMode === 'closed'
+  }
+  getMembersWithRole (roleId) {
+    return this.members?.filter(m => m.value.roles?.includes(roleId)) || []
+  }
+
+  getRoles () {
+    let memberRecord = this.members?.find?.(m => m.value.user.userId === session.info.userId)
+    return memberRecord?.value?.roles
+  }
+  hasPermission (permId) {
+    if (!this.isCommunity) {
+      return false
+    }
+    let memberRecord = this.members?.find?.(m => m.value.user.userId === session.info.userId)
+    if (!memberRecord) return false
+    if (!memberRecord.value.roles?.length) return false
+    if (memberRecord.value.roles.includes('admin')) {
+      return true
+    }
+    for (let roleId of memberRecord.value.roles) {
+      let roleRecord = this.roles.find(r => r.value.roleId === roleId)
+      if (roleRecord && !!roleRecord.value.permissions?.find(p => p.permId === permId)) {
+        return true
+      }
+    }
+    return false
+  }
+  get canEditSettings () {
+    return session.info.userId === this.userId || this.hasPermission('ctzn.network/perm-community-edit-profile')
+  }
+
   updated (changedProperties) {
     if (changedProperties.has('profile') && this.profile) {
       this.load()
     }
+
+    if (changedProperties.has('communityConfig') && this.isCommunity) {
+      this.joinModeSelected = this.communityConfig.joinMode
+    }
+
   }
 
   async load () {
@@ -114,10 +169,22 @@ export class EditProfile extends LitElement {
     this.requestUpdate()
   }
 
-  // rendering
-  // =
+
+  anyCommunityPerms () {
+    if (!this.isCommunity) return false
+    const canInvite = this.hasPermission('ctzn.network/perm-community-invite')
+    const canManageRoles = this.hasPermission('ctzn.network/perm-community-manage-roles')
+    // const canBan = this.hasPermission('ctzn.network/perm-community-ban')
+    const canEditConfig = this.hasPermission('ctzn.network/perm-community-update-config')
+
+    return   }
+
 
   render () {
+    const canInvite = this.hasPermission('ctzn.network/perm-community-invite')
+    const canManageRoles = this.hasPermission('ctzn.network/perm-community-manage-roles')
+    const canEditConfig = this.hasPermission('ctzn.network/perm-community-update-config')
+
     if (!this.values) return html``
     const navItem = (id, label) => html`
       <div
@@ -147,6 +214,7 @@ export class EditProfile extends LitElement {
           <div class="flex sm:block border-b sm:border-b-0 sm:border-r border-gray-200">
             ${navItem('basics', 'Basics')}
             ${navItem('images', 'Images')}
+            ${this.isCommunity ? navItem('manage', 'Manage') : ''}
             ${navItem('advanced', 'Advanced')}
           </div>
           <div class="sm:flex-1 px-4 pt-2 pb-4">
@@ -212,7 +280,9 @@ export class EditProfile extends LitElement {
               <input id="banner-file-input" class="hidden" type="file" accept=".jpg,.jpeg,.png,.svg" @change=${this.onChooseBannerFile}>
               <input id="avatar-file-input" class="hidden" type="file" accept=".jpg,.jpeg,.png,.svg" @change=${this.onChooseAvatarFile}>
             </div>
-
+            <div class="${this.currentView === 'manage' ? 'block' : 'hidden'}">
+              ${this.isCommunity ? this.renderManageBlock(canInvite, canManageRoles, canEditConfig) : "This is not a community, what are you doing here?"}
+            </div>
             <div class="${this.currentView === 'advanced' ? 'block' : 'hidden'}">
               <label class="block font-semibold p-1">Profile UI</label>
               <div class="mb-2">
@@ -264,6 +334,73 @@ export class EditProfile extends LitElement {
         </div>
       </form>
     `
+  }
+
+  renderManageBlock(canInvite, canManageRoles, canEditConfig) {
+    return html`
+      <div class="px-3 py-2 sm:rounded bg-white mb-1">
+          ${canInvite ? html`
+            <h2 class="text-3xl py-4">Invite user</h2>
+
+            <section class="mb-2">
+              <app-users-input .users=${session.myFollowing} @change-user=${(e) => {
+                this.invitedUser = e.detail.value
+                this.hasChanges = true
+              }}></app-users-input>
+            </section>
+          ` : ''}
+          ${(canEditConfig) ? html`
+              <h2 class="text-3xl pt-4 pb-2">Join Mode</h2>
+                <label class="block font-semibold pb-1">Join Mode</label>
+                <div class="border border-gray-200 rounded px-2 pt-3 pb-2">
+                  <div class="flex items-baseline mb-2">
+                    <input
+                      id="joinMode-open"
+                      type="radio"
+                      name="joinMode"
+                      value="open"
+                      class="mx-2"
+                      @change=${(e) => {
+                        this.joinModeSelected = 'open';
+                        this.hasChanges = true
+                      }}
+                      ?checked=${this.joinModeSelected ? 
+
+                        this.joinModeSelected !== 'closed'
+                        : this.communityConfig?.joinMode !== 'closed'}
+                    >
+                    <label for="joinMode-open" class="text-gray-600">
+                      <strong class="font-semibold text-black">Open.</strong>
+                      Anybody can join the community.
+                    </label>
+                  </div>
+                  <div class="flex items-baseline">
+                    <input
+                      id="joinMode-closed"
+                      type="radio"
+                      name="joinMode"
+                      value="closed"
+                      class="mx-2"
+                      @change=${(e) => {
+                        this.joinModeSelected = 'closed';
+                        this.hasChanges = true
+                      }}
+                      ?checked=${this.joinModeSelected ?
+                        this.joinModeSelected === 'closed'
+                        : this.communityConfig?.joinMode === 'closed'}
+                    >
+                    <label for="joinMode-closed" class="text-gray-600">
+                      <strong class="font-semibold text-black">Closed.</strong>
+                      Members must be invited to join the community.
+                    </label>
+                  </div>
+                  <div class="bg-gray-100 mt-2 px-2 py-1 rounded text-gray-500 text-sm">
+                    Note: Closed communities are still publicly readable.
+                  </div>
+                </div>
+                ` : ''}
+              </div>`
+
   }
 
   renderSection (section, i) {
@@ -532,18 +669,63 @@ export class EditProfile extends LitElement {
           isPending = isPending || res.pending()
         }
       }
+
+
       if (!isPending) {
         toast.create('Profile updated', 'success')
         emit(this, 'profile-updated')
       } else {
         toast.create('Updates processing')
       }
+      // profile update handled, now handle community updates 
+      if (this.isCommunity) {
+        try {
+          let isCommunityPending = false
+          if (this.joinModeSelected !== this.communityConfig?.joinMode) {
+            let res3
+            res3 = await session.ctzn.db(this.commuityId).method(
+              'ctzn.network/community-update-config-method',
+              {joinMode: this.joinModeSelected}
+            )
+            isCommunityPending = res3.pending()
+          }
+
+          if (this.invitedUser) {
+            let invitedUser
+            try {
+              invitedUser = await session.ctzn.lookupUser(this.invitedUser)
+              if (!invitedUser.userId || !invitedUser.dbUrl) throw new Error('webfinger lookup failed')
+            } catch (e) {
+              this.invitedUser = undefined
+              throw new Error(`Failed to lookup user details: ${e.toString()}`)
+            }
+            res4 = await session.ctzn.db(this.communityId).method(
+              'ctzn.network/community-invite-member-method',
+              {invitedUser}
+            )
+            isCommunityPending = isCommunityPending || res4.pending()
+          }
+        } catch(e) {
+          this.currentError = e.toString()
+          console.error(e)
+        }
+
+        if (!isCommunityPending) {
+          toast.create('Community updated', 'success')
+          emit(this, 'profile-updated')
+        } else {
+          toast.create('Updates processing')
+        }
+
+      }
+
       this.hasChanges = false
       this.customUIOverride = undefined
     } catch (e) {
       this.currentError = e.toString()
       console.error(e)
     }
+
   }
 }
 
