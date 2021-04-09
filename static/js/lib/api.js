@@ -38,6 +38,12 @@ export class CtznAPI {
     return this.databases[databaseId]
   }
 
+  async getServerCommunities(domain) {
+    if (session.isActive(domain)) {
+      return session.api.server.listCommunities()
+    }
+  }
+
   async view (viewId, ...args) {
     return session.api.view.get(viewId, ...args)
   }

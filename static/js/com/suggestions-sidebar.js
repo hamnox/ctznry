@@ -87,9 +87,41 @@ export class SuggestionsSidebar extends LitElement {
 
   async load () {
     if (!this.suggestedCommunities) {
-      if (session.isActive() && session.myCommunities) {
-        this.suggestedCommunities = SUGGESTED_COMMUNITIES.filter(c => !session.isInCommunity(c.userId))
-        this.suggestedCommunities = this.suggestedCommunities.sort(() => Math.random() - 0.5).slice(0, 8)
+      if (session.isActive() && session.myCommunities && session.myFollowing) {
+        let serverCommunities = await session.ctzn.getServerCommunities()
+
+        // filter out groups the user has already joined,
+        //    and small groups (unless admin'd by the user's follows)
+        serverCommunities = serverCommunities?.filter(c => {
+          return !session.isInCommunity(c.userId) &&
+            (c.numMembers > 5 || c.admins.some(
+              (admin) => session.myFollowing.includes(admin)
+            ))
+        })
+
+        this.suggestedCommunities = serverCommunities.sort(() => Math.random() - 0.5).slice(0, 8)
+
+        this.suggestedCommunities = await Promise.all(this.suggestedCommunities.map(async (c) => {
+          try {
+            let profile = await session.ctzn.getProfile(c.userId)
+            let description = profile?.value?.description
+            let value = {
+              userId: c.userId,
+              description,
+              admins: c.admins,
+              numMembers: c.numMembers,
+              displayName: c.displayName,
+              isJoining: c.isJoining
+            }
+            console.log(value)
+            return value
+          } catch(err) {
+            console.error(err)
+            return c
+          }
+        }))
+
+
       } else {
         session.onSecondaryState(this.load.bind(this))
       }
