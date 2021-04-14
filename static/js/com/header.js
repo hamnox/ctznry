@@ -1,4 +1,4 @@
-import {LitElement, html} from '../../vendor/lit-element/lit-element.js'
+import { LitElement, html } from '../../vendor/lit-element/lit-element.js'
 import { repeat } from '../../vendor/lit-element/lit-html/directives/repeat.js'
 import * as session from '../lib/session.js'
 import * as displayNames from '../lib/display-names.js'
@@ -9,15 +9,17 @@ import { CreateCommunityPopup } from './popups/create-community.js'
 import * as toast from './toast.js'
 import './button.js'
 
+import { DEFAULT_CITIZEN_PROFILE_SECTIONS } from '../lib/const.js'
+
 const CHECK_NOTIFICATIONS_INTERVAL = 10e3
 
 export class Header extends LitElement {
-  static get properties () {
+  static get properties() {
     return {
-      currentPath: {type: String, attribute: 'current-path'},
-      isMenuOpen: {type: Boolean},
-      unreadNotificationsCount: {type: Number},
-      community: {type: Object}
+      currentPath: { type: String, attribute: 'current-path' },
+      isMenuOpen: { type: Boolean },
+      unreadNotificationsCount: { type: Number },
+      community: { type: Object }
     }
   }
 
@@ -25,39 +27,42 @@ export class Header extends LitElement {
     return this // dont use shadow dom
   }
 
-  constructor () {
+  constructor() {
     super()
     this.currentPath = location.pathname
     this.isMenuOpen = false
     this.unreadNotificationsCount = 0
     this.community = undefined
+    this.sections = DEFAULT_CITIZEN_PROFILE_SECTIONS
+
     document.body.addEventListener('open-main-menu', e => {
       this.isMenuOpen = true
     })
     setInterval(this.checkNotifications.bind(this), CHECK_NOTIFICATIONS_INTERVAL)
     session.onChange(() => this.requestUpdate())
+    session.onSecondaryState(() => this.requestUpdate())
   }
 
-  firstUpdated () {
+  firstUpdated() {
     this.checkNotifications()
   }
 
-  async checkNotifications () {
+  async checkNotifications() {
     if (!session.isActive()) return
     const clearedAt = (await session.ctzn.view('ctzn.network/notifications-cleared-at-view'))?.notificationsClearedAt || undefined
     let oldCount = this.unreadNotificationsCount
-    this.unreadNotificationsCount = (await session.ctzn.view('ctzn.network/notifications-count-view', {after: clearedAt})).count
+    this.unreadNotificationsCount = (await session.ctzn.view('ctzn.network/notifications-count-view', { after: clearedAt })).count
     if (oldCount !== this.unreadNotificationsCount) {
-      emit(this, 'unread-notifications-changed', {detail: {count: this.unreadNotificationsCount}})
+      emit(this, 'unread-notifications-changed', { detail: { count: this.unreadNotificationsCount } })
     }
   }
 
-  getMenuNavClass (str) {
+  getMenuNavClass(str) {
     const additions = str === this.currentPath ? 'text-blue-600' : ''
     return `pl-3 pr-4 py-3 font-semibold rounded hov:hover:bg-gray-100 ${additions}`
   }
 
-  render () {
+  render() {
     if (!session.isActive()) {
       return this.renderLoggedOut()
     }
@@ -72,48 +77,54 @@ export class Header extends LitElement {
               <span class="text-lg text-gray-500 tracking-tight">alpha</span>
             </div>
           </div>
-          <div class="flex flex-col px-2">
-            <hr class="my-3 mx-3">
+          <div class="flex flex-col px-3">
+            <hr class="my-4 mx-3">
+          ${session.hasOneSaved() ? html`
             <a href="/" class=${this.getMenuNavClass('/')} @click=${this.onClickLink}>
-              <span class="fas mr-1.5 fa-fw navicon fa-home"></span>
+              <span class="fas mr-2.5 fa-fw navicon fa-home"></span>
               Home
             </a>
             <a href="/notifications" class="relative ${this.getMenuNavClass('/notifications')}" @click=${this.onClickLink}>
-              ${this.unreadNotificationsCount > 0 ? html`
-                <span class="absolute bg-blue-500 font-medium leading-none px-1.5 py-0.5 rounded-2xl text-white text-xs" style="top: 5px; left: 22px">${this.unreadNotificationsCount}</span>
+              ${this.unreadNotificationsCount > -1 ? html`
+                <span class="absolute bg-blue-501 font-medium leading-none px-1.5 py-0.5 rounded-2xl text-white text-xs" style="top: 5px; left: 22px">${this.unreadNotificationsCount}</span>
               ` : ''}
-              <span class="fas mr-1.5 fa-fw navicon fa-bell"></span>
+              <span class="fas mr-2.5 fa-fw navicon fa-bell"></span>
               Notifications
-            </a>
+            </a>` : ''}
             <a href="/communities" class="${this.getMenuNavClass('/communities')}" @click=${this.onClickLink}>
-              <span class="fas mr-1.5 fa-fw navicon fa-users"></span>
+              <span class="fas mr-2.5 fa-fw navicon fa-users"></span>
               Communities
             </a>
-            <hr class="my-3 mx-3">
-            <a
-              class="flex items-center ${this.getMenuNavClass()} mt-1"
+            <hr class="my-4 mx-3">
+            ${session.hasOneSaved() ? html`<a
+              class="flex items-center ${this.getMenuNavClass()} mt-2"
               href="/${info.userId}"
               title=${info.userId}
               @click=${this.onClickLink}
             >
-              <span class="inline-block mr-2" style="margin-left: -3px">
+              <span class="inline-block mr-3" style="margin-left: -3px">
                 <img
-                  class="inline-block w-8 h-8 sm:w-7 sm:h-7 object-cover rounded"
+                  class="inline-block w-9 h-8 sm:w-7 sm:h-7 object-cover rounded"
                   src=${AVATAR_URL(info.userId)}
                 >
               </span>
               My Profile
             </a>
-            <a href="/${info.userId}/inventory" class=${this.getMenuNavClass()} @click=${this.onClickLink}>
-              <span class="fas mr-1.5 fa-fw navicon fa-suitcase"></span>
-              My Inventory
-            </a>
-            <hr class="my-3 mx-3">
+            ${session.mySections?.length > 0 ? repeat(session.mySections, (section) => {
+      return html`<a href="/${info?.userId}/${section.id}"
+                class=${this.getMenuNavClass()}
+                @click=${this.onClickLink}>
+                  <span class="fas mr-1.5 fa-fw navicon fa-angle-right"></span>
+                    ${section.label}
+                </a>`
+    }) : ''}` : ''}
+            <hr class="my-4 mx-3">
           </div>
-          <div class="mt-3 sm:mb-auto px-4">
+          ${session.hasOneSaved() ? html`
+          <div class="mt-4 sm:mb-auto px-4">
             <app-button
               primary
-              btn-class="text-base sm:text-sm font-semibold w-full mb-2 rounded-3xl"
+              btn-class="text-base sm:text-sm font-semibold w-full mb-3 rounded-3xl"
               label="Create Post"
               @click=${this.onClickCreatePost}
             ></app-button>
@@ -122,14 +133,15 @@ export class Header extends LitElement {
               label="Create Community"
               @click=${this.onClickCreateCommunity}
             ></app-button>
-            <hr class="mt-5">
+            <hr class="mt-6">
           </div>
-          <div class="py-3 px-2">
-            <div class="pb-16 sm:pb-6 flex flex-col">
-              <a class=${this.getMenuNavClass('/account')} href="/account" @click=${this.onClickLink}><span class="fas fa-fw fa-cog mr-1.5"></span> Account</a>
-              <a class=${this.getMenuNavClass()} href="#" @click=${this.onLogOut}>
+          ` : ''}
+          <div class="py-4 px-2">
+            <div class="pb-17 sm:pb-6 flex flex-col">
+              <a class=${this.getMenuNavClass('/account')} href="/account" @click=${this.onClickLink}><span class="fas fa-fw fa-cog mr-2.5"></span> Account</a>
+              ${session.hasOneSaved() ? html`<a class=${this.getMenuNavClass()} href="#" @click=${this.onLogOut}>
                 <span class="fas fa-fw fa-sign-out-alt mr-1.5"></span> Log out
-              </a>
+              </a>` : ''}
             </div>
           </div>
         </div>
@@ -209,7 +221,7 @@ export class Header extends LitElement {
     `
   }
 
-  renderLoggedOut () {
+  renderLoggedOut() {
     return html`
       <header>
         <div class="logged-out-prompt bg-white mb-4">
@@ -239,20 +251,20 @@ export class Header extends LitElement {
   // events
   // =
 
-  onClickLink (e) {
+  onClickLink(e) {
     this.isMenuOpen = false
   }
 
-  onClickMenuOverlay (e) {
+  onClickMenuOverlay(e) {
     this.isMenuOpen = false
   }
 
-  async onLogOut () {
+  async onLogOut() {
     await session.doLogout()
     location.reload()
   }
 
-  async onClickCreatePost (e) {
+  async onClickCreatePost(e) {
     e.preventDefault()
     e.stopPropagation()
     this.isMenuOpen = false
@@ -268,7 +280,7 @@ export class Header extends LitElement {
     }
   }
 
-  async onClickCreateCommunity (e) {
+  async onClickCreateCommunity(e) {
     e.preventDefault()
     e.stopPropagation()
     this.isMenuOpen = false
